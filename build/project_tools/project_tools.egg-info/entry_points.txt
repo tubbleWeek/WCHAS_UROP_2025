@@ -1,0 +1,5 @@
+[console_scripts]
+gazebo_model_tracker = project_tools.gazebo_model_subscriber:main
+initial_pose_setter = project_tools.initial_pose_set:main
+map_transformation_node = project_tools.map_to_odom_tf:main
+

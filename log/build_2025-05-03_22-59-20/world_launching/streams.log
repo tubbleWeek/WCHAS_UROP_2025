@@ -1,0 +1,20 @@
+[0.964s] Invoking command in '/home/william/WCHAS_UROP_2025/src/world_launching': PYTHONPATH=/home/william/WCHAS_UROP_2025/build/world_launching/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/william/WCHAS_UROP_2025/install/world_launching/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../build/world_launching build --build-base /home/william/WCHAS_UROP_2025/build/world_launching/build install --record /home/william/WCHAS_UROP_2025/build/world_launching/install.log --single-version-externally-managed install_data
+[1.156s] running egg_info
+[1.157s] writing ../../build/world_launching/world_launching.egg-info/PKG-INFO
+[1.157s] writing dependency_links to ../../build/world_launching/world_launching.egg-info/dependency_links.txt
+[1.157s] writing entry points to ../../build/world_launching/world_launching.egg-info/entry_points.txt
+[1.157s] writing requirements to ../../build/world_launching/world_launching.egg-info/requires.txt
+[1.157s] writing top-level names to ../../build/world_launching/world_launching.egg-info/top_level.txt
+[1.159s] reading manifest file '../../build/world_launching/world_launching.egg-info/SOURCES.txt'
+[1.159s] writing manifest file '../../build/world_launching/world_launching.egg-info/SOURCES.txt'
+[1.160s] running build
+[1.160s] running build_py
+[1.160s] running install
+[1.160s] running install_lib
+[1.160s] running install_data
+[1.161s] running install_egg_info
+[1.162s] removing '/home/william/WCHAS_UROP_2025/install/world_launching/lib/python3.10/site-packages/world_launching-0.0.0-py3.10.egg-info' (and everything under it)
+[1.163s] Copying ../../build/world_launching/world_launching.egg-info to /home/william/WCHAS_UROP_2025/install/world_launching/lib/python3.10/site-packages/world_launching-0.0.0-py3.10.egg-info
+[1.163s] running install_scripts
+[1.180s] writing list of installed files to '/home/william/WCHAS_UROP_2025/build/world_launching/install.log'
+[1.210s] Invoked command in '/home/william/WCHAS_UROP_2025/src/world_launching' returned '0': PYTHONPATH=/home/william/WCHAS_UROP_2025/build/world_launching/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/william/WCHAS_UROP_2025/install/world_launching/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../build/world_launching build --build-base /home/william/WCHAS_UROP_2025/build/world_launching/build install --record /home/william/WCHAS_UROP_2025/build/world_launching/install.log --single-version-externally-managed install_data
