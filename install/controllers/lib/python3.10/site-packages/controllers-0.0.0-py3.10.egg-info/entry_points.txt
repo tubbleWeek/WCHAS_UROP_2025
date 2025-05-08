@@ -1,3 +1,0 @@
-[console_scripts]
-mppi_controller = controllers.mppi_controller:main
-
