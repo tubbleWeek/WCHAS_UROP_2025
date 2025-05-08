@@ -1,4 +1,0 @@
-[console_scripts]
-extended_particle_filter = particle_filter.extended_particle_filter:main
-particle_filter = particle_filter.particle_filter:main
-
