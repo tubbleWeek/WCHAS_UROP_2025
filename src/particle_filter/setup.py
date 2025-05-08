@@ -20,7 +20,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'particle_filter = particle_filter.particle_filter:main'
+            'particle_filter = particle_filter.particle_filter:main',
+            'extended_particle_filter = particle_filter.extended_particle_filter:main'
         ],
     },
 )

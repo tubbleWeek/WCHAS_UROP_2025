@@ -3,19 +3,13 @@ from rosbags.rosbag2 import Reader
 from rosbags.serde import deserialize_cdr
 import matplotlib.pyplot as plt
 import numpy as np
-
-def calculate_distance(pose1, pose2):
-    """Calculate Euclidean distance between two positions"""
-    dx = pose1.x - pose2.x
-    dy = pose1.y - pose2.y
-    return np.sqrt(dx**2 + dy**2)
+from scipy.interpolate import interp1d
 
 def process_bag(bag_path):
     odom_data = []
     model_pose_data = []
     
     with Reader(bag_path) as reader:
-        # Create a dictionary to map connections to their topic and data type
         connections = [c for c in reader.connections]
         for connection, timestamp, rawdata in reader.messages(connections=connections):
             if connection.topic == '/odom':
@@ -33,59 +27,60 @@ def process_bag(bag_path):
                     'y': msg.position.y
                 })
 
-    # Time alignment and distance calculation
-    distances = []
-    odom_idx = 0
+    # Convert to numpy arrays
+    odom_times = np.array([p['timestamp'] for p in odom_data])
+    odom_x = np.array([p['x'] for p in odom_data])
+    odom_y = np.array([p['y'] for p in odom_data])
     
-    for model_pose in model_pose_data:
-        # Find closest odom message in time
-        while (odom_idx < len(odom_data)-1 and 
-               abs(odom_data[odom_idx+1]['timestamp'] - model_pose['timestamp']) < 
-               abs(odom_data[odom_idx]['timestamp'] - model_pose['timestamp'])):
-            odom_idx += 1
-            
-        # Calculate distance
-        odom_pose = odom_data[odom_idx]
-        distances.append(calculate_distance(
-            type('', (object,), odom_pose),
-            type('', (object,), model_pose)
-        ))
+    model_times = np.array([p['timestamp'] for p in model_pose_data])
+    model_x = np.array([p['x'] for p in model_pose_data])
+    model_y = np.array([p['y'] for p in model_pose_data])
+
+    # Create interpolation functions
+    interp_x = interp1d(odom_times, odom_x, kind='linear', 
+                       bounds_error=False, fill_value="extrapolate")
+    interp_y = interp1d(odom_times, odom_y, kind='linear',
+                       bounds_error=False, fill_value="extrapolate")
+
+    # Get interpolated odom positions at model pose times
+    interp_odom_x = interp_x(model_times)
+    interp_odom_y = interp_y(model_times)
     
-    # Calculate statistics
-    avg_distance = np.mean(distances)
-    max_distance = np.max(distances)
-    min_distance = np.min(distances)
+    # Calculate distances
+    dx = model_x - interp_odom_x
+    dy = model_y - interp_odom_y
+    distances = np.sqrt(dx**2 + dy**2)
+
+    # Statistics
+    avg_distance = np.nanmean(distances)
+    max_distance = np.nanmax(distances)
+    min_distance = np.nanmin(distances)
 
     # Plotting
     plt.figure(figsize=(12, 6))
     
-    # Plot trajectories
+    # Trajectory comparison
     plt.subplot(1, 2, 1)
-    plt.plot([p['x'] for p in odom_data], [p['y'] for p in odom_data], label='Odometry')
-    plt.plot([p['x'] for p in model_pose_data], [p['y'] for p in model_pose_data], label='Tracked Model')
+    plt.plot(odom_x, odom_y, 'b-', label='Odometry (Interpolated)', alpha=0.5)
+    plt.plot(model_x, model_y, 'r-', label='Tracked Model', alpha=0.5)
     plt.xlabel('X Position')
     plt.ylabel('Y Position')
     plt.title('Trajectory Comparison')
     plt.legend()
-    plt.grid(True)
-
-    # Plot distance histogram
+    
+    # Distance distribution
     plt.subplot(1, 2, 2)
     plt.hist(distances, bins=50, alpha=0.7)
-    plt.xlabel('Euclidean Distance')
+    plt.xlabel('Euclidean Distance (m)')
     plt.ylabel('Frequency')
-    plt.title(f'Distance Distribution\nAvg: {avg_distance:.2f}m, Max: {max_distance:.2f}m')
-
+    plt.title(f'Distance Distribution\nAvg: {avg_distance:.4f}m, Max: {max_distance:.4f}m')
+    
     plt.tight_layout()
     plt.show()
 
-    print(f"Average Euclidean distance: {avg_distance:.4f} meters")
-    print(f"Maximum distance: {max_distance:.4f} meters")
-    print(f"Minimum distance: {min_distance:.4f} meters")
+    print(f"Average distance: {avg_distance:.6f}m")
+    print(f"Max distance: {max_distance:.6f}m")
+    print(f"Min distance: {min_distance:.6f}m")
 
 if __name__ == '__main__':
-    if len(sys.argv) != 2:
-        print("Usage: python bag_analysis.py <path_to_bag_directory>")
-        sys.exit(1)
-        
     process_bag(sys.argv[1])

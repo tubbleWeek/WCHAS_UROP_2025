@@ -12,6 +12,9 @@ from tf_transformations import euler_from_quaternion, quaternion_from_euler
 import random
 import math
 from visualization_msgs.msg import Marker, MarkerArray
+from message_filters import Subscriber, ApproximateTimeSynchronizer
+from sensor_msgs.msg import Image, CameraInfo
+
 
 class ParticleFilter(Node):
     def __init__(self):
@@ -26,7 +29,7 @@ class ParticleFilter(Node):
         self.declare_parameter('initial_cov_a', 0.1)
         
         # Increased number of particles for better representation
-        self.num_particles = 20
+        self.num_particles = 100
         self.initial_pose_x = self.get_parameter('initial_pose_x').value
         self.initial_pose_y = self.get_parameter('initial_pose_y').value
         self.initial_pose_a = self.get_parameter('initial_pose_a').value
@@ -35,15 +38,15 @@ class ParticleFilter(Node):
         self.initial_cov_a = self.get_parameter('initial_cov_a').value
         
         # Motion model noise parameters - REDUCED VALUES
-        self.alpha1 = 0.01  # Reduced from 0.1
-        self.alpha2 = 0.01  # Reduced from 0.1
-        self.alpha3 = 0.01  # Reduced from 0.1
-        self.alpha4 = 0.01  # Reduced from 0.1
+        self.alpha1 = 0.2  # Reduced from 0.1
+        self.alpha2 = 0.2  # Reduced from 0.1
+        self.alpha3 = 0.2  # Reduced from 0.1
+        self.alpha4 = 0.2  # Reduced from 0.1
         
         # Improved sensor model parameters
-        self.z_hit = 0.98    # Increased weight for hit model
-        self.z_rand = 0.02   # Decreased weight for random model
-        self.sigma_hit = 0.1  # Reduced sigma for sharper distribution
+        self.z_hit = 0.9   # Increased weight for hit model
+        self.z_rand = 0.1   # Decreased weight for random model
+        self.sigma_hit = 0.05  # Reduced sigma for sharper distribution
         self.laser_max_range = 3.5
         
         # KLD-sampling parameters
@@ -278,7 +281,13 @@ class ParticleFilter(Node):
             else:
                 # Keep the old particle with slightly modified orientation
                 # This helps particles "escape" from invalid positions
-                new_particles.append((px, py, ptheta + np.random.normal(0, 0.05)))
+                # new_particles.append((px, py, ptheta + np.random.normal(0, 0.05)))
+                best_idx = np.argmax(self.weights)
+                best_x, best_y, best_theta = self.particles[best_idx]
+                px_new = best_x + np.random.normal(0, 0.1)
+                py_new = best_y + np.random.normal(0, 0.1)
+                ptheta_new = best_theta + np.random.normal(0, 0.05)
+                new_particles.append((px_new, py_new, ptheta_new))
                 
         self.particles = new_particles
         

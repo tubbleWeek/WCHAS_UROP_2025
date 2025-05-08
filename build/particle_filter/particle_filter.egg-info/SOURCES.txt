@@ -9,6 +9,7 @@ setup.py
 ../../build/particle_filter/particle_filter.egg-info/top_level.txt
 ../../build/particle_filter/particle_filter.egg-info/zip-safe
 particle_filter/__init__.py
+particle_filter/extended_particle_filter.py
 particle_filter/particle_filter.py
 resource/particle_filter
 test/test_copyright.py
