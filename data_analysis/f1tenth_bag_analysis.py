@@ -4,6 +4,8 @@ from rosbags.serde import deserialize_cdr
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.interpolate import interp1d
+import yaml
+import os
 
 def read_bag(bag_path, target_topic, is_phasespace=False):
     """Read a bag file and extract data from the specified topic."""
@@ -20,18 +22,35 @@ def read_bag(bag_path, target_topic, is_phasespace=False):
             # Handle coordinate system conversion for Phasespace
             if is_phasespace:
                 # Phasespace uses (X, -Z) → convert to standard (X, Y)
-                x = msg.transform.translation.x / 1000.0  # mm → m
-                y = -msg.transform.translation.z / 1000.0  # mm → m
+                y = -msg.transform.translation.x / 1000.0  # mm → m
+                x = -msg.transform.translation.z / 1000.0  # mm → m
             else:  # Odometry (standard X, Y)
-                x = msg.pose.pose.position.x
-                y = msg.pose.pose.position.y
+                y = -msg.pose.pose.position.x
+                x = msg.pose.pose.position.y
 
             data.append({'timestamp': timestamp_ns, 'x': x, 'y': y})
     
     return data
 
-def process_bags(phasespace_bag_path, odom_bag_path):
+def process_bags(phasespace_bag_path, odom_bag_path, map_yaml_path) :
     # Read data from both bags
+    # Load map data
+    with open(map_yaml_path) as f:
+        map_info = yaml.safe_load(f)
+    map_dir = os.path.dirname(map_yaml_path)
+    image_path = os.path.join(map_dir, map_info['image'])
+    map_img = plt.imread(image_path)
+    resolution = map_info['resolution']
+    origin = map_info['origin']  # [x, y, theta]
+    
+    # Calculate image extent for plotting (ROS coordinate system)
+    map_height, map_width = map_img.shape[:2]
+    left = origin[0]
+    right = origin[0] + map_width * resolution
+    bottom = origin[1]
+    top = origin[1] + map_height * resolution
+    extent = [left, right, bottom, top]
+
     phasespace_data = read_bag(phasespace_bag_path, '/phasespace', is_phasespace=True)
     odom_data = read_bag(odom_bag_path, '/odom')
 
@@ -104,15 +123,17 @@ def process_bags(phasespace_bag_path, odom_bag_path):
     # Plotting
     plt.figure(figsize=(12, 6))
     
-    # Trajectory comparison
+    # Trajectory comparison with map
     plt.subplot(1, 2, 1)
-    plt.plot(odom_x, odom_y, 'b-', label='Odometry (Raw)', alpha=0.3)
+    plt.imshow(map_img, extent=extent, cmap='gray', alpha=0.7, origin='lower')
+    # plt.plot(odom_x, odom_y, 'b-', label='Odometry (Raw)', alpha=0.5)
     plt.plot(phasespace_x, phasespace_y, 'r-', label='Phasespace (Adjusted)', linewidth=2)
     plt.plot(odom_x_interp, odom_y_interp, 'g--', label='Odometry (Interpolated)')
     plt.xlabel('X Position (m)')
     plt.ylabel('Y Position (m)')
-    plt.title('Trajectory Comparison with Initial Alignment')
+    plt.title('Trajectory Comparison')
     plt.legend()
+    plt.grid(True)
 
     # Error distribution
     plt.subplot(1, 2, 2)
@@ -129,7 +150,7 @@ def process_bags(phasespace_bag_path, odom_bag_path):
     print(f"Minimum Error: {min_dist:.6f} meters")
 
 if __name__ == '__main__':
-    if len(sys.argv) != 3:
-        print("Usage: python f1tenth_bag_analysis.py <phasespace_bag_dir> <odom_bag_dir>")
+    if len(sys.argv) != 4:
+        print("Usage: python f1tenth_bag_analysis.py <phasespace_bag_dir> <odom_bag_dir> <map.yaml>")
         sys.exit(1)
-    process_bags(sys.argv[1], sys.argv[2])
+    process_bags(sys.argv[1], sys.argv[2], sys.argv[3])

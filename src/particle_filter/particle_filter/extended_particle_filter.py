@@ -36,7 +36,7 @@ class ParticleFilter(Node):
         self.declare_parameter('initial_cov_a', 0.1)
         
         # Increased number of particles for better representation
-        self.num_particles = 20
+        self.num_particles = 30
         self.initial_pose_x = self.get_parameter('initial_pose_x').value
         self.initial_pose_y = self.get_parameter('initial_pose_y').value
         self.initial_pose_a = self.get_parameter('initial_pose_a').value
@@ -53,13 +53,13 @@ class ParticleFilter(Node):
         self.depth_z_hit   = 0.75
         self.depth_z_rand  = 0.25
         self.depth_sigma   = 0.15    # meters
-        self.num_depth_samples = 10  # how many pixels per update
+        self.num_depth_samples = 20  # how many pixels per update
         self.floor_z = 0.0       # Expected floor height (meters)
         self.floor_tolerance = 0.1  # Allow 10cm variation
         # Motion model noise parameters - REDUCED VALUES
         self.alpha1 = 0.1  # Rotation noise component
-        self.alpha2 = 0.05  # Translation noise component
-        self.alpha3 = 0.05  # Additional translation noise
+        self.alpha2 = 0.1  # Translation noise component
+        self.alpha3 = 0.1  # Additional translation noise
         self.alpha4 = 0.1   # Additional rotation noise
         
         # Improved sensor model parameters
@@ -160,7 +160,7 @@ class ParticleFilter(Node):
         # synchronize scan + depth + camera_info
         self.sync = ApproximateTimeSynchronizer(
             [self.scan_sub, self.depth_sub],
-            queue_size=10,
+            queue_size=1,
             slop=0.1
         )
         self.sync.registerCallback(self.sensor_callback)
@@ -368,9 +368,9 @@ class ParticleFilter(Node):
                 # new_particles.append((px, py, ptheta + np.random.normal(0, 0.05)))
                 best_idx = np.argmax(self.weights)
                 best_x, best_y, best_theta = self.particles[best_idx]
-                px_new = best_x + np.random.normal(0, 0.1)
-                py_new = best_y + np.random.normal(0, 0.1)
-                ptheta_new = best_theta + np.random.normal(0, 0.05)
+                px_new = best_x + np.random.normal(0, 0.3)
+                py_new = best_y + np.random.normal(0, 0.3)
+                ptheta_new = best_theta + np.random.normal(0, 0.2)
                 new_particles.append((px_new, py_new, ptheta_new))
                 
         self.particles = new_particles
@@ -385,7 +385,7 @@ class ParticleFilter(Node):
         angles = np.arange(scan_msg.angle_min, scan_msg.angle_max + scan_msg.angle_increment, scan_msg.angle_increment)
         
         # Use more beams for better accuracy, but still subsample for efficiency
-        step = 10  # Use every 10th beam instead of 20th
+        step = 20  # Use every 10th beam instead of 20th
         ranges = np.array(scan_msg.ranges[::step])
         scan_angles = angles[::step]
         # floor_z = -0.1  # Expected floor height in base frame
