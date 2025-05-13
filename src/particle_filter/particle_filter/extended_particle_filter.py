@@ -20,8 +20,8 @@ from message_filters import Subscriber, ApproximateTimeSynchronizer
 from sensor_msgs.msg import Image, CameraInfo
 from message_filters import Subscriber, ApproximateTimeSynchronizer
 from sensor_msgs.msg import Image, CameraInfo
-from builtin_interfaces.msg import Time, Duration
-
+# from builtin_interfaces.msg import Time, Duration
+from rclpy.duration import Duration
 
 class ParticleFilter(Node):
     def __init__(self):
@@ -36,45 +36,36 @@ class ParticleFilter(Node):
         self.declare_parameter('initial_cov_a', 0.1)
         
         # Increased number of particles for better representation
-        self.num_particles = 1000
+        self.num_particles = 20
         self.initial_pose_x = self.get_parameter('initial_pose_x').value
         self.initial_pose_y = self.get_parameter('initial_pose_y').value
         self.initial_pose_a = self.get_parameter('initial_pose_a').value
         self.initial_cov_x = self.get_parameter('initial_cov_x').value
         self.initial_cov_y = self.get_parameter('initial_cov_y').value
         self.initial_cov_a = self.get_parameter('initial_cov_a').value
-        # lidar subscriber
-        self.scan_sub = Subscriber(self, LaserScan, 'scan')
-        # depth camera + intrinsics
-        self.depth_sub = Subscriber(self, Image, '/camera/depth/image_raw')
-        self.info_sub  = Subscriber(self, CameraInfo, '/camera/depth/camera_info')
-
-        # synchronize scan + depth + camera_info
-        self.sync = ApproximateTimeSynchronizer(
-            [self.scan_sub, self.depth_sub, self.info_sub],
-            queue_size=10,
-            slop=0.1)
-        self.sync.registerCallback(self.sensor_callback)
+        
 
         # for converting ROS depth→numpy
         from cv_bridge import CvBridge
         self.bridge = CvBridge()
 
         # depth‐sensor model parameters
-        self.depth_z_hit   = 0.9
-        self.depth_z_rand  = 0.1
-        self.depth_sigma   = 0.05    # meters
-        self.num_depth_samples = 80  # how many pixels per update
+        self.depth_z_hit   = 0.75
+        self.depth_z_rand  = 0.25
+        self.depth_sigma   = 0.15    # meters
+        self.num_depth_samples = 10  # how many pixels per update
+        self.floor_z = 0.0       # Expected floor height (meters)
+        self.floor_tolerance = 0.1  # Allow 10cm variation
         # Motion model noise parameters - REDUCED VALUES
-        self.alpha1 = 0.3  # Reduced from 0.1
-        self.alpha2 = 0.2  # Reduced from 0.1
-        self.alpha3 = 0.3  # Reduced from 0.1
-        self.alpha4 = 0.2  # Reduced from 0.1
+        self.alpha1 = 0.1  # Rotation noise component
+        self.alpha2 = 0.05  # Translation noise component
+        self.alpha3 = 0.05  # Additional translation noise
+        self.alpha4 = 0.1   # Additional rotation noise
         
         # Improved sensor model parameters
-        self.z_hit = 0.9   # Increased weight for hit model
-        self.z_rand = 0.1   # Decreased weight for random model
-        self.sigma_hit = 0.05  # Reduced sigma for sharper distribution
+        self.z_hit = 0.85   # Increased weight for hit model
+        self.z_rand = 0.15   # Decreased weight for random model
+        self.sigma_hit = 0.1  # Reduced sigma for sharper distribution
         self.laser_max_range = 3.5
         
         # KLD-sampling parameters
@@ -86,8 +77,14 @@ class ParticleFilter(Node):
         self.resampling_threshold = 0.3
         
         # Adaptive resampling parameters
-        self.min_effective_particles = self.num_particles * 0.4
+        self.min_effective_particles = self.num_particles / 2.0
         
+        # Camera Variables
+        self.fx = None
+        self.fy = None
+        self.cx = None
+        self.cy = None
+
         # State variables
         self.particles = []
         self.weights = []
@@ -108,7 +105,7 @@ class ParticleFilter(Node):
         
         # Publishers
         self.particle_pub = self.create_publisher(PoseArray, '~/particle_filter/particle_cloud', 10)
-        self.pose_pub = self.create_publisher(Odometry, '/odom', 10)
+        self.pose_pub = self.create_publisher(Odometry, '/pf/odom', 10)
         self.amcl_pose_pub = self.create_publisher(PoseWithCovarianceStamped, 'amcl_pose', 10)
         self.best_particle_marker_pub = self.create_publisher(Marker, 'best_particle', 10)
         
@@ -134,16 +131,39 @@ class ParticleFilter(Node):
             self.odom_callback,
             10
         )
+        self.camera_info_sub = self.create_subscription(
+            CameraInfo,
+            '/intel_realsense_r200_depth/depth/camera_info',
+            self._camera_info_callback,
+            10
+        )
+        self.get_logger().info("Waiting for Camera...")
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
         # names of your camera & base frames (match your URDF)
         self.camera_frame = 'camera_depth_frame'
         self.base_frame   = 'base_link'
+        
         # Wait for map to be available
         while rclpy.ok() and self.map_data is None:
-            rclpy.spin_once(self, timeout_sec=0.1)
+            rclpy.spin_once(self, timeout_sec=None)
         self.get_logger().info("Map received!")
+        while rclpy.ok() and self.fx is None:
+            rclpy.spin_once(self, timeout_sec=None)
+        self.get_logger().info(f"Camera Info Recieved {self.fx}, {self.fy}, {self.cx}, {self.cy}")
+        # lidar subscriber
+        self.scan_sub = Subscriber(self, LaserScan, '/scan')
+        # depth camera + intrinsics
+        self.depth_sub = Subscriber(self, Image, '/intel_realsense_r200_depth/depth/image_raw')
+
+        # synchronize scan + depth + camera_info
+        self.sync = ApproximateTimeSynchronizer(
+            [self.scan_sub, self.depth_sub],
+            queue_size=10,
+            slop=0.1
+        )
+        self.sync.registerCallback(self.sensor_callback)
         
         # Precompute distance transform for faster sensor model
         self.distance_transform = None
@@ -152,7 +172,15 @@ class ParticleFilter(Node):
         
         self.initialize_particles()
         self.update_timer = self.create_timer(0.1, self.timer_callback)
+        
 
+    def _camera_info_callback(self, info_msg):
+        K = info_msg.k
+        if self.fx is None:
+            self.fx, self.fy, self.cx, self.cy = K[0], K[4], K[2], K[5]
+        else:
+            # unsubscribe after grabbing intrinsics
+            self.destroy_subscription(self.camera_info_sub)
     def precompute_distance_transform(self):
         """Precompute distance transform for faster sensor model"""
         from scipy.ndimage import distance_transform_edt
@@ -213,6 +241,7 @@ class ParticleFilter(Node):
         
         # Precompute distance transform when map changes
         self.precompute_distance_transform()
+
     def transform_camera_to_base(self, x_c: float, y_c: float, z_c: float):
         """
         Transform a 3D point from the depth‐camera frame into the base_link frame.
@@ -224,14 +253,14 @@ class ParticleFilter(Node):
         pt_cam.header.frame_id = self.camera_frame
         pt_cam.point.x = x_c
         pt_cam.point.y = y_c
-        pt_cam.point.z = z_c
+        pt_cam.point.z = float(z_c)
 
         try:
             # lookup & apply transform → get a new PointStamped in base_frame
             pt_base: PointStamped = self.tf_buffer.transform(
                 pt_cam,
                 self.base_frame,
-                timeout=Duration(seconds=0.2)
+                timeout=Duration(seconds=1)
             )
             return (pt_base.point.x,
                     pt_base.point.y,
@@ -264,15 +293,12 @@ class ParticleFilter(Node):
             self.publish_particles()
             self.publish_estimated_pose()
         
-    def sensor_callback(self, scan_msg, depth_msg, info_msg):
+    def sensor_callback(self, scan_msg, depth_msg):
+        self.get_logger().info("Sensor called")
         # extract depth image as float32 numpy (meters)
         depth_image = self.bridge.imgmsg_to_cv2(depth_msg, desired_encoding='32FC1')
-        # store intrinsics
-        K = info_msg.k  # [fx, 0, cx, 0, fy, cy, 0,0,1]
-        fx, fy = K[0], K[4]
-        cx, cy = K[2], K[5]
-        # call unified measurement update
-        self.measurement_update(scan_msg, depth_image, fx, fy, cx, cy)
+
+        self.measurement_update(scan_msg, depth_image, self.fx, self.fy, self.cx, self.cy)
         
         # Calculate effective sample size for adaptive resampling
         n_eff = 1.0 / np.sum(np.square(self.weights))
@@ -293,6 +319,8 @@ class ParticleFilter(Node):
     def motion_update(self):
         """Update particle positions based on odometry"""
         if self.last_odom is None or self.current_odom is None:
+            self.get_logger().info(f'Odom Null')
+
             return
             
         # Extract pose from odometry
@@ -340,9 +368,9 @@ class ParticleFilter(Node):
                 # new_particles.append((px, py, ptheta + np.random.normal(0, 0.05)))
                 best_idx = np.argmax(self.weights)
                 best_x, best_y, best_theta = self.particles[best_idx]
-                px_new = best_x + np.random.normal(0, 0.3)  # Increased noise for exploration
-                py_new = best_y + np.random.normal(0, 0.3)
-                ptheta_new = best_theta + np.random.normal(0, 0.15)
+                px_new = best_x + np.random.normal(0, 0.1)
+                py_new = best_y + np.random.normal(0, 0.1)
+                ptheta_new = best_theta + np.random.normal(0, 0.05)
                 new_particles.append((px_new, py_new, ptheta_new))
                 
         self.particles = new_particles
@@ -350,6 +378,8 @@ class ParticleFilter(Node):
     def measurement_update(self, scan_msg, depth_image, fx, fy, cx, cy):
         """Update particle weights based on laser scan measurements"""
         if len(self.particles) == 0 or self.map_data is None:
+            self.get_logger().info(f'Measurement Null')
+
             return
             
         angles = np.arange(scan_msg.angle_min, scan_msg.angle_max + scan_msg.angle_increment, scan_msg.angle_increment)
@@ -374,8 +404,9 @@ class ParticleFilter(Node):
             log_w = 0.0
             for r,ang in zip(ranges, scan_angles):
                 # … same per‐beam likelihood‐field …
-                log_w += math.log( max(p,1e-10) )
-            lidar_logs.append(log_w)
+                p = self.get_scan_probability(px, py, pt, ranges, scan_angles, scan_msg)
+                log_w += math.log(max(p, 1e-10))
+        lidar_logs.append(log_w) 
         #–– now add depth log‐likelihood per particle ––
         depth_logs = []
         H, W = depth_image.shape
@@ -394,10 +425,19 @@ class ParticleFilter(Node):
                 y_c = (v - cy)*z/fy
                 # transform to robot base, then world
                 # assume depth camera frame → base_link known as T_cb
-                x_r, y_r = self.transform_camera_to_base(x_c, y_c, z)
-                bx = px + (math.cos(pt)*x_r - math.sin(pt)*z)
-                by = py + (math.sin(pt)*x_r + math.cos(pt)*z)
-                mx,my = self.world_to_map(bx,by)
+                x_b, y_b, z_b = self.transform_camera_to_base(x_c, y_c, z)
+
+                # Ground plane filtering
+                if abs(z_b - self.floor_z) > self.floor_tolerance:
+                    continue
+
+                # Particle-relative transformation
+                wx = px + x_b * math.cos(pt) - y_b * math.sin(pt)
+                wy = py + x_b * math.sin(pt) + y_b * math.cos(pt)
+
+                # Map check
+                mx, my = self.world_to_map(wx, wy)
+                # mx,my = self.world_to_map(bx,by)
                 d = (0 <= mx < self.map_info.width and
                      0 <= my < self.map_info.height) \
                     and self.distance_transform[my,mx] \
@@ -415,6 +455,8 @@ class ParticleFilter(Node):
         combined -= combined.max()
         w = np.exp(combined)
         self.weights = w / w.sum()
+        self.get_logger().info(f'Measurement Called')
+
             
     def get_scan_probability(self, px, py, ptheta, ranges, scan_angles, scan_msg):
         """Calculate probability of a scan given particle position using improved model"""
@@ -439,7 +481,13 @@ class ParticleFilter(Node):
             valid_beams += 1
             
             # Calculate expected range by ray casting in the map
+            # expected_range = self.improved_raycasting(px, py, beam_angle, scan_msg.range_max)
             expected_range = self.improved_raycasting(px, py, beam_angle, scan_msg.range_max)
+            # mx, my = self.world_to_map(px, py)
+            # if (0 <= mx < self.map_info.width and 0 <= my < self.map_info.height):
+            #     expected_range = self.distance_transform[my, mx]
+            # else:
+            #     expected_range = scan_msg.range_max
             
             # Calculate error between expected and actual range
             error = abs(beam_range - expected_range)

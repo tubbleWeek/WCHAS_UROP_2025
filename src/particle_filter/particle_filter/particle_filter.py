@@ -38,15 +38,15 @@ class ParticleFilter(Node):
         self.initial_cov_a = self.get_parameter('initial_cov_a').value
         
         # Motion model noise parameters - REDUCED VALUES
-        self.alpha1 = 0.2  # Reduced from 0.1
-        self.alpha2 = 0.2  # Reduced from 0.1
-        self.alpha3 = 0.2  # Reduced from 0.1
-        self.alpha4 = 0.2  # Reduced from 0.1
+        self.alpha1 = 0.1  # Rotation noise component
+        self.alpha2 = 0.05  # Translation noise component
+        self.alpha3 = 0.05  # Additional translation noise
+        self.alpha4 = 0.1   # Additional rotation noise
         
         # Improved sensor model parameters
-        self.z_hit = 0.9   # Increased weight for hit model
-        self.z_rand = 0.1   # Decreased weight for random model
-        self.sigma_hit = 0.05  # Reduced sigma for sharper distribution
+        self.z_hit = 0.85   # Increased weight for hit model
+        self.z_rand = 0.15   # Decreased weight for random model
+        self.sigma_hit = 0.1  # Reduced sigma for sharper distribution
         self.laser_max_range = 3.5
         
         # KLD-sampling parameters
@@ -80,7 +80,7 @@ class ParticleFilter(Node):
         
         # Publishers
         self.particle_pub = self.create_publisher(PoseArray, '~/particle_filter/particle_cloud', 10)
-        self.pose_pub = self.create_publisher(Odometry, '/odom', 10)
+        self.pose_pub = self.create_publisher(Odometry, '/pf/odom', 10)
         self.amcl_pose_pub = self.create_publisher(PoseWithCovarianceStamped, 'amcl_pose', 10)
         self.best_particle_marker_pub = self.create_publisher(Marker, 'best_particle', 10)
         
@@ -357,7 +357,13 @@ class ParticleFilter(Node):
             valid_beams += 1
             
             # Calculate expected range by ray casting in the map
+            # expected_range = self.improved_raycasting(px, py, beam_angle, scan_msg.range_max)
             expected_range = self.improved_raycasting(px, py, beam_angle, scan_msg.range_max)
+            # mx, my = self.world_to_map(px, py)
+            # if (0 <= mx < self.map_info.width and 0 <= my < self.map_info.height):
+            #     expected_range = self.distance_transform[my, mx]
+            # else:
+            #     expected_range = scan_msg.range_max
             
             # Calculate error between expected and actual range
             error = abs(beam_range - expected_range)

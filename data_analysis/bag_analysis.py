@@ -1,18 +1,38 @@
 import sys
+import os
+import yaml
 from rosbags.rosbag2 import Reader
 from rosbags.serde import deserialize_cdr
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.interpolate import interp1d
 
-def process_bag(bag_path):
+def process_bag(bag_path, map_yaml_path):
+    # Load map data
+    with open(map_yaml_path) as f:
+        map_info = yaml.safe_load(f)
+    map_dir = os.path.dirname(map_yaml_path)
+    image_path = os.path.join(map_dir, map_info['image'])
+    map_img = plt.imread(image_path)
+    resolution = map_info['resolution']
+    origin = map_info['origin']  # [x, y, theta]
+    
+    # Calculate image extent for plotting
+    map_height, map_width = map_img.shape[:2]
+    left = origin[0]
+    right = origin[0] + map_width * resolution
+    bottom = origin[1]
+    top = origin[1] + map_height * resolution
+    extent = [left, right, bottom, top]
+
+    # Load bag data
     odom_data = []
     model_pose_data = []
     
     with Reader(bag_path) as reader:
         connections = [c for c in reader.connections]
         for connection, timestamp, rawdata in reader.messages(connections=connections):
-            if connection.topic == '/odom':
+            if connection.topic == '/pf/odom':
                 msg = deserialize_cdr(rawdata, connection.msgtype)
                 odom_data.append({
                     'timestamp': timestamp,
@@ -59,14 +79,16 @@ def process_bag(bag_path):
     # Plotting
     plt.figure(figsize=(12, 6))
     
-    # Trajectory comparison
+    # Trajectory comparison with map
     plt.subplot(1, 2, 1)
-    plt.plot(odom_x, odom_y, 'b-', label='Odometry (Interpolated)', alpha=0.5)
-    plt.plot(model_x, model_y, 'r-', label='Tracked Model', alpha=0.5)
-    plt.xlabel('X Position')
-    plt.ylabel('Y Position')
+    plt.imshow(map_img, cmap='gray', extent=extent, alpha=0.5)
+    plt.plot(odom_x, odom_y, 'b-', label='Odometry', alpha=0.8)
+    plt.plot(model_x, model_y, 'r-', label='Tracked Model', alpha=0.8)
+    plt.xlabel('X Position (m)')
+    plt.ylabel('Y Position (m)')
     plt.title('Trajectory Comparison')
-    plt.legend()
+    # plt.legend(top=True)
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     
     # Distance distribution
     plt.subplot(1, 2, 2)
@@ -83,4 +105,7 @@ def process_bag(bag_path):
     print(f"Min distance: {min_distance:.6f}m")
 
 if __name__ == '__main__':
-    process_bag(sys.argv[1])
+    if len(sys.argv) < 3:
+        print("Usage: python bag_analysis.py <bag_directory> <map_yaml_file>")
+        sys.exit(1)
+    process_bag(sys.argv[1], sys.argv[2])
