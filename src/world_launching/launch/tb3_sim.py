@@ -70,8 +70,8 @@ def generate_launch_description():
     # world_launch_directory = get_package_share_directory('world_launching')
     # worlds_directory = os.path.join(world_launch_directory, 'worlds')
     # /home/william/CSCI-5551-final-project/src/world_launching/launch/tb3_simulation_launch.py
-    world_name = "/home/william/CSCI-5551-final-project/src/world_launching/worlds/BARN_dataset/world_files/world_0.world"
-    map_name = "/home/william/CSCI-5551-final-project/src/world_launching/worlds/BARN_dataset/map_files/yaml_0.yaml"
+    world_name = "/home/william/WCHAS_UROP_2025/src/world_launching/worlds/BARN_dataset/world_files/world_198.world"
+    map_name = "/home/william/WCHAS_UROP_2025/src/world_launching/worlds/BARN_dataset/map_files/yaml_198.yaml"
     # Declare the launch arguments
     declare_world_num_cmd = DeclareLaunchArgument(
         'world_num',

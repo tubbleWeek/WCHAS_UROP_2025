@@ -36,7 +36,7 @@ class ParticleFilter(Node):
         self.declare_parameter('initial_cov_a', 0.1)
         
         # Increased number of particles for better representation
-        self.num_particles = 30
+        self.num_particles = 80
         self.initial_pose_x = self.get_parameter('initial_pose_x').value
         self.initial_pose_y = self.get_parameter('initial_pose_y').value
         self.initial_pose_a = self.get_parameter('initial_pose_a').value
@@ -63,8 +63,8 @@ class ParticleFilter(Node):
         self.alpha4 = 0.1   # Additional rotation noise
         
         # Improved sensor model parameters
-        self.z_hit = 0.85   # Increased weight for hit model
-        self.z_rand = 0.15   # Decreased weight for random model
+        self.z_hit = 0.7   # Increased weight for hit model
+        self.z_rand = 0.3   # Decreased weight for random model
         self.sigma_hit = 0.1  # Reduced sigma for sharper distribution
         self.laser_max_range = 3.5
         
@@ -308,13 +308,14 @@ class ParticleFilter(Node):
         if n_eff < self.min_effective_particles:
             self.get_logger().debug(f"Resampling triggered. Effective sample size: {n_eff}")
             self.resample()
-            
+        
         # Store scan for future reference
         self.previous_scan = scan_msg
             
         # Publish results
         self.publish_particles()
         self.publish_estimated_pose()
+        
         
     def motion_update(self):
         """Update particle positions based on odometry"""
@@ -368,9 +369,9 @@ class ParticleFilter(Node):
                 # new_particles.append((px, py, ptheta + np.random.normal(0, 0.05)))
                 best_idx = np.argmax(self.weights)
                 best_x, best_y, best_theta = self.particles[best_idx]
-                px_new = best_x + np.random.normal(0, 0.3)
-                py_new = best_y + np.random.normal(0, 0.3)
-                ptheta_new = best_theta + np.random.normal(0, 0.2)
+                px_new = best_x + np.random.normal(0, 0.5)
+                py_new = best_y + np.random.normal(0, 0.5)
+                ptheta_new = best_theta + np.random.normal(0, 0.4)
                 new_particles.append((px_new, py_new, ptheta_new))
                 
         self.particles = new_particles
@@ -385,20 +386,10 @@ class ParticleFilter(Node):
         angles = np.arange(scan_msg.angle_min, scan_msg.angle_max + scan_msg.angle_increment, scan_msg.angle_increment)
         
         # Use more beams for better accuracy, but still subsample for efficiency
-        step = 20  # Use every 10th beam instead of 20th
+        step = 30  # Use every 10th beam instead of 20th
         ranges = np.array(scan_msg.ranges[::step])
         scan_angles = angles[::step]
-        # floor_z = -0.1  # Expected floor height in base frame
-        # floor_threshold = 0.05
-        
-        # # Modify depth processing to include floor likelihood
-        # for u,v in zip(...):
-        #     z = depth_image[v,u]
-        #     if z > 4.0:  # Max range returns
-        #         # Penalize particles not aligned with expected floor geometry
-        #         x_b, y_b, z_b = self.transform_camera_to_base(x_c, y_c, z)
-        #         floor_prob = np.exp(-abs(z_b - floor_z)/floor_threshold)
-        #         p += self.depth_z_floor * floor_prob
+
         lidar_logs = []
         for px,py,pt in self.particles:
             log_w = 0.0

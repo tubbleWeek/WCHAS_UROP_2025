@@ -39,8 +39,8 @@ class ParticleFilter(Node):
         
         # Motion model noise parameters - REDUCED VALUES
         self.alpha1 = 0.1  # Rotation noise component
-        self.alpha2 = 0.05  # Translation noise component
-        self.alpha3 = 0.05  # Additional translation noise
+        self.alpha2 = 0.1  # Translation noise component
+        self.alpha3 = 0.1  # Additional translation noise
         self.alpha4 = 0.1   # Additional rotation noise
         
         # Improved sensor model parameters
@@ -61,8 +61,8 @@ class ParticleFilter(Node):
         self.min_effective_particles = self.num_particles / 2.0
         
         # State variables
-        self.particles = []
-        self.weights = []
+        self.particles = np.zeros((self.num_particles, 3))  # x, y, theta
+        self.weights = np.ones(self.num_particles) / self.num_particles
         self.map_data = None
         self.map_info = None
         self.last_odom = None
@@ -158,23 +158,18 @@ class ParticleFilter(Node):
         self.get_logger().info(f"Particles reinitialized to: x={self.initial_pose_x}, y={self.initial_pose_y}, θ={self.initial_pose_a}")
         
     def initialize_particles(self):
-        """Initialize particles uniformly around the initial pose estimate"""
-        self.particles = []
-        self.weights = np.ones(self.num_particles) / self.num_particles
+        """Vectorized particle initialization"""
+        self.particles[:, 0] = self.initial_pose_x + np.random.normal(0, self.initial_cov_x*0.5, self.num_particles)
+        self.particles[:, 1] = self.initial_pose_y + np.random.normal(0, self.initial_cov_y*0.5, self.num_particles)
+        self.particles[:, 2] = self.initial_pose_a + np.random.normal(0, self.initial_cov_a*0.5, self.num_particles)
+        self.particles[:, 2] = self.normalize_angles(self.particles[:, 2])
         
-        # Use tighter distribution around initial pose
-        for i in range(self.num_particles):
-            x = self.initial_pose_x + np.random.normal(0, self.initial_cov_x * 0.5)
-            y = self.initial_pose_y + np.random.normal(0, self.initial_cov_y * 0.5)
-            theta = self.initial_pose_a + np.random.normal(0, self.initial_cov_a * 0.5)
-            theta = self.normalize_angle(theta)
-            
-            # Ensure the particle is valid (not in obstacle)
-            if self.is_valid_position(x, y):
-                self.particles.append((x, y, theta))
-            else:
-                # Try again with the initial position if invalid
-                self.particles.append((self.initial_pose_x, self.initial_pose_y, theta))
+        # Vectorized validity check
+        valid = np.array([self.is_valid_position(x, y) for x, y in self.particles[:, :2]])
+        invalid_idx = np.where(~valid)[0]
+        if len(invalid_idx) > 0:
+            self.particles[invalid_idx, 0] = self.initial_pose_x
+            self.particles[invalid_idx, 1] = self.initial_pose_y
             
         self.publish_particles()
         
@@ -233,7 +228,11 @@ class ParticleFilter(Node):
         # Publish results
         self.publish_particles()
         self.publish_estimated_pose()
-        
+    
+    def normalize_angles(self, angles):
+        """Vectorized angle normalization"""
+        return np.mod(angles + np.pi, 2*np.pi) - np.pi
+    
     def motion_update(self):
         """Update particle positions based on odometry"""
         if self.last_odom is None or self.current_odom is None:
@@ -258,38 +257,30 @@ class ParticleFilter(Node):
             return
         
         # Update each particle with noise
-        new_particles = []
-        for i, (px, py, ptheta) in enumerate(self.particles):
-            # Add noise proportional to motion magnitude
-            # Use smaller noise for small movements
-            noise_scale = min(1.0, trans * 5.0 + abs(dtheta) * 5.0)
-            
-            # Add noise to motion estimates (probabilistic motion model)
-            noisy_rot1 = rot1 + np.random.normal(0, self.alpha1 * abs(rot1) + self.alpha2 * trans) * noise_scale
-            noisy_trans = trans + np.random.normal(0, self.alpha3 * trans + self.alpha4 * (abs(rot1) + abs(rot2))) * noise_scale
-            noisy_rot2 = rot2 + np.random.normal(0, self.alpha1 * abs(rot2) + self.alpha2 * trans) * noise_scale
-            
-            # Apply motion to particle
-            ptheta_new = self.normalize_angle(ptheta + noisy_rot1)
-            px_new = px + noisy_trans * np.cos(ptheta_new)
-            py_new = py + noisy_trans * np.sin(ptheta_new)
-            ptheta_new = self.normalize_angle(ptheta_new + noisy_rot2)
-            
-            # Check if the new position is valid (not in an obstacle)
-            if self.is_valid_position(px_new, py_new):
-                new_particles.append((px_new, py_new, ptheta_new))
-            else:
-                # Keep the old particle with slightly modified orientation
-                # This helps particles "escape" from invalid positions
-                # new_particles.append((px, py, ptheta + np.random.normal(0, 0.05)))
-                best_idx = np.argmax(self.weights)
-                best_x, best_y, best_theta = self.particles[best_idx]
-                px_new = best_x + np.random.normal(0, 0.1)
-                py_new = best_y + np.random.normal(0, 0.1)
-                ptheta_new = best_theta + np.random.normal(0, 0.05)
-                new_particles.append((px_new, py_new, ptheta_new))
-                
-        self.particles = new_particles
+        self.particles = np.array(self.particles)
+    
+        # Vectorized motion update
+        noise_scale = np.clip(trans * 5 + np.abs(dtheta) * 5, 0, 1)
+        
+        # Generate all random values at once
+        noise = np.random.normal(0, 1, (self.num_particles, 3))
+        noisy_rot1 = rot1 + (self.alpha1 * np.abs(rot1) + self.alpha2 * trans) * noise[:, 0] * noise_scale
+        noisy_trans = trans + (self.alpha3 * trans + self.alpha4 * (np.abs(rot1) + np.abs(rot2))) * noise[:, 1] * noise_scale
+        noisy_rot2 = rot2 + (self.alpha1 * np.abs(rot2) + self.alpha2 * trans) * noise[:, 2] * noise_scale
+        
+        # Apply motion vectorized
+        theta_new = self.normalize_angles(self.particles[:, 2] + noisy_rot1)
+        self.particles[:, 0] += noisy_trans * np.cos(theta_new)
+        self.particles[:, 1] += noisy_trans * np.sin(theta_new)
+        self.particles[:, 2] = self.normalize_angles(theta_new + noisy_rot2)
+        
+        # Validity check and recovery
+        valid = np.array([self.is_valid_position(x, y) for x, y in self.particles[:, :2]])
+        invalid_idx = np.where(~valid)[0]
+        if len(invalid_idx) > 0:
+            best_idx = np.argmax(self.weights)
+            self.particles[invalid_idx] = self.particles[best_idx] + np.random.normal(0, [0.3, 0.3, 0.15], (len(invalid_idx), 3))
+            self.particles[invalid_idx, 2] = self.normalize_angles(self.particles[invalid_idx, 2])
         
     def measurement_update(self, scan_msg):
         """Update particle weights based on laser scan measurements"""
@@ -335,56 +326,34 @@ class ParticleFilter(Node):
             self.weights = new_weights
             
     def get_scan_probability(self, px, py, ptheta, ranges, scan_angles, scan_msg):
-        """Calculate probability of a scan given particle position using improved model"""
-        # Start with a very small probability to avoid zero
-        probability = 0.0
-        
-        # Count how many beams we actually use
-        valid_beams = 0
-        total_error = 0.0
-        
-        # Use a more robust algorithm for handling beam errors
-        errors = []
-        
-        # Check a subset of the beams for efficiency
+        """Improved beam-based sensor model with multiple error components"""
+        prob = 1.0
+        z_short = 0.1  # Weight for unexpected obstacles
+        z_max = 0.05   # Weight for max range measurements
+        lambda_short = 0.1  # Exponential decay parameter
+
         for i, beam_range in enumerate(ranges):
-            # Skip invalid measurements
-            if np.isnan(beam_range) or beam_range > scan_msg.range_max or beam_range < scan_msg.range_min:
+            if beam_range > scan_msg.range_max or beam_range < scan_msg.range_min:
                 continue
                 
-            # Calculate global angle of this beam
-            beam_angle = self.normalize_angle(ptheta + scan_angles[i])
-            valid_beams += 1
+            # Calculate expected range
+            expected_range = self.improved_raycasting(px, py, 
+                self.normalize_angle(ptheta + scan_angles[i]),
+                scan_msg.range_max
+            )
+
+            # Calculate individual components
+            p_hit = self.z_hit * np.exp(-0.5 * ((beam_range - expected_range)/self.sigma_hit)**2)
+            p_short = z_short * (lambda_short * np.exp(-lambda_short * beam_range) 
+                    if beam_range < expected_range else 0)
+            p_rand = self.z_rand / scan_msg.range_max
+            p_max = z_max if beam_range >= scan_msg.range_max else 0
             
-            # Calculate expected range by ray casting in the map
-            # expected_range = self.improved_raycasting(px, py, beam_angle, scan_msg.range_max)
-            expected_range = self.improved_raycasting(px, py, beam_angle, scan_msg.range_max)
-            # mx, my = self.world_to_map(px, py)
-            # if (0 <= mx < self.map_info.width and 0 <= my < self.map_info.height):
-            #     expected_range = self.distance_transform[my, mx]
-            # else:
-            #     expected_range = scan_msg.range_max
-            
-            # Calculate error between expected and actual range
-            error = abs(beam_range - expected_range)
-            errors.append(error)
-            total_error += error
-            
-        # If we didn't use any valid beams, return a small probability
-        if valid_beams == 0:
-            return 1e-10
-            
-        # Calculate mean error
-        mean_error = total_error / valid_beams
-        
-        # Calculate probability using an exponential model
-        # This penalizes large errors more severely
-        probability = np.exp(-mean_error / self.sigma_hit)
-        
-        # Clip to prevent extremely small probabilities
-        probability = max(probability, 1e-10)
-        
-        return probability
+            # Total probability
+            p_total = p_hit + p_short + p_rand + p_max
+            prob *= p_total
+
+        return max(prob, 1e-10)
         
     def improved_raycasting(self, x, y, angle, max_range):
         """Improved raycasting with dynamic step size for accuracy and speed"""

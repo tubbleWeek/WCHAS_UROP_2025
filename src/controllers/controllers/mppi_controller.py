@@ -238,7 +238,7 @@ class MPPIPlannerNode(Node):
           # Control and sample specification
         #   variance = 0.1
           u_std = np.array([0.05, 0.1]),
-          vrange = np.array([0.0, 0.22]), # Linear velocity range. Constant Linear Velocity
+          vrange = np.array([0.0, 0.1]), # Linear velocity range. Constant Linear Velocity
           wrange = np.array([-2.84, 2.84]), # Angular velocity range.
         #   wrange = np.array([-1.5, 1.5]),
           costmap = None, # intiallly nothing
