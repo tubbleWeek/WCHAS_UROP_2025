@@ -136,6 +136,6 @@ def process_bag(bag_path, map_yaml_path):
 
 if __name__ == '__main__':
     if len(sys.argv) < 3:
-        print("Usage: python bag_analysis.py <bag_directory> <map_yaml_file>")
+        print("Usage: python overlay_analysis.py <bag_directory> <map_yaml_file>")
         sys.exit(1)
     process_bag(sys.argv[1], sys.argv[2])
