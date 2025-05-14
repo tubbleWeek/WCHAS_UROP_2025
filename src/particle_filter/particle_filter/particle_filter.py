@@ -485,11 +485,13 @@ class ParticleFilter(Node):
             else:
                 # Keep original position if new one is invalid
                 new_particles.append(self.particles[i])
-            
-        self.particles = new_particles
-        
-        # Reset weights
+        # Convert new_particles to numpy array
+        self.particles = np.array(new_particles)  # Changed from list to numpy array
         self.weights = np.ones(self.num_particles) / self.num_particles
+        # self.particles = new_particles
+        
+        # # Reset weights
+        # self.weights = np.ones(self.num_particles) / self.num_particles
         
     def low_variance_resampling(self):
         """Low variance resampling algorithm - better than systematic for PF"""
